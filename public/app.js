@@ -1,7 +1,8 @@
-const state = { config: null, selected: 0 };
+const state = { config: null, active: 0, imageToken: 0, hoverTimer: 0, previewCache: new Map() };
 const $ = s => document.querySelector(s);
 const dock = $('#flowerDock');
 const dialog = $('#pickDialog');
+const desktopPointer = matchMedia('(any-hover: hover) and (any-pointer: fine)');
 const CONTACT_LIMITS = Object.freeze({ message: 2000, email: 254, qq: 12, wechat: 64, phone: 30, douyin: 80, redbook: 80, feishu: 100 });
 const MAX_CLEAR_PAYLOAD_BYTES = 16 * 1024;
 
@@ -71,14 +72,22 @@ function buildDock() {
     const label = document.createElement('em'); label.textContent = flower.species;
     button.append(symbol, label);
     button.setAttribute('aria-label', `${flower.species}：${flower.title}${flower.picked ? '，已被摘走' : ''}`);
-    button.addEventListener('click', () => selectFlower(index));
+    button.addEventListener('pointerenter', event => {
+      if (event.pointerType !== 'touch' && desktopPointer.matches) previewFlower(index, { deferFull: true });
+    });
+    button.addEventListener('focus', () => { if (desktopPointer.matches) previewFlower(index, { deferFull: true }); });
+    button.addEventListener('click', event => {
+      if (desktopPointer.matches && event.pointerType !== 'touch') openPicker(index);
+      else previewFlower(index);
+    });
     dock.appendChild(button);
   });
   setupDockMagnification();
 }
 
 function setupDockMagnification() {
-  if (matchMedia('(pointer: coarse)').matches) return;
+  if (dock.dataset.magnificationReady || !desktopPointer.matches) return;
+  dock.dataset.magnificationReady = 'true';
   dock.addEventListener('pointermove', event => {
     dock.querySelectorAll('.dock-item').forEach(item => {
       const rect = item.getBoundingClientRect();
@@ -91,8 +100,8 @@ function setupDockMagnification() {
   dock.addEventListener('pointerleave', () => dock.querySelectorAll('.dock-item').forEach(item => item.style.setProperty('--scale', 1)));
 }
 
-function selectFlower(index) {
-  state.selected = index;
+function renderFlower(index) {
+  state.active = index;
   const flower = state.config.flowers[index];
   document.documentElement.style.setProperty('--accent', flower.color);
   $('#stageArt').style.setProperty('--focus', flower.mediaFocus);
@@ -109,8 +118,48 @@ function selectFlower(index) {
   dock.querySelector(`[data-flower="${flower.id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
 }
 
-function openPicker() {
-  const flower = state.config.flowers[state.selected]; if (flower.picked) return;
+function showCachedPreview(flower) {
+  const cached = state.previewCache.get(flower.preview);
+  if (cached?.complete && cached.naturalWidth) $('#stagePreview').src = flower.preview;
+}
+
+async function loadFullImage(flower, token) {
+  const image = new Image(); image.decoding = 'async'; image.src = flower.image;
+  try { await image.decode(); } catch { await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; }); }
+  if (token !== state.imageToken) return;
+  const stageImage = $('#stageImage'); stageImage.src = flower.image;
+  requestAnimationFrame(() => stageImage.classList.remove('is-loading'));
+}
+
+function previewFlower(index, { deferFull = false } = {}) {
+  clearTimeout(state.hoverTimer);
+  renderFlower(index);
+  const flower = state.config.flowers[index]; const token = ++state.imageToken;
+  const stageImage = $('#stageImage');
+  if (stageImage.getAttribute('src') === flower.image && stageImage.complete && stageImage.naturalWidth) { stageImage.classList.remove('is-loading'); return; }
+  const cachedPreview = state.previewCache.get(flower.preview);
+  if (cachedPreview?.complete && cachedPreview.naturalWidth) { showCachedPreview(flower); $('#stageImage').classList.add('is-loading'); }
+  const begin = () => loadFullImage(flower, token).catch(() => { if (token === state.imageToken) $('#stageImage').classList.remove('is-loading'); });
+  if (deferFull) state.hoverTimer = setTimeout(begin, 130); else begin();
+}
+
+function preloadSmallPreviews() {
+  if (navigator.connection?.saveData || /(^|-)2g$/.test(navigator.connection?.effectiveType || '')) return;
+  const start = () => state.config.flowers.forEach(flower => {
+    if (!flower.preview || state.previewCache.has(flower.preview)) return;
+    const image = new Image(); image.decoding = 'async'; image.src = flower.preview;
+    image.onload = () => { state.previewCache.set(flower.preview, image); if (state.config.flowers[state.active]?.preview === flower.preview) showCachedPreview(flower); };
+    state.previewCache.set(flower.preview, image);
+  });
+  if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 1200 }); else setTimeout(start, 300);
+}
+
+function openPicker(index = state.active) {
+  clearTimeout(state.hoverTimer);
+  previewFlower(index);
+  const flower = state.config.flowers[index];
+  if (flower.picked) { showToast('这朵花已经有归处了'); return; }
+  if (!state.config.publicKey) { showToast('花园尚未开放摘取'); return; }
   $('#modalFlower').textContent = flower.species;
   $('#shareMessageWrap').hidden = !state.config.allowPlainMessage; $('#shareEmailWrap').hidden = !state.config.allowPlainEmail;
   syncPlainOptions();
@@ -138,7 +187,7 @@ async function submitPick(event) {
   if (!$('#consent').checked) { $('#formStatus').textContent = '请先确认指纹采集授权'; return; }
   if (!$('#pickForm').checkValidity()) { $('#pickForm').reportValidity(); return; }
   const button = $('#submitPick'); button.disabled = true; $('#formStatus').textContent = '正在本地收集并加密…';
-  const flower = state.config.flowers[state.selected];
+  const flower = state.config.flowers[state.active];
   try {
     const contact = Object.fromEntries(Object.entries(CONTACT_LIMITS).map(([field, limit]) => {
       const value = $(`#${field}`).value.trim();
@@ -164,11 +213,11 @@ async function load() {
   try {
     state.config = await api('/api/config');
     document.title = state.config.gardenName; $('#gardenName').textContent = state.config.gardenName; $('#invitation').textContent = state.config.invitation;
-    buildDock(); selectFlower(Math.min(state.selected, state.config.flowers.length - 1));
+    buildDock(); previewFlower(Math.min(state.active, state.config.flowers.length - 1)); preloadSmallPreviews();
   } catch (error) { showToast(error.message); }
 }
 
-$('#pickButton').addEventListener('click', openPicker);
+$('#pickButton').addEventListener('click', () => openPicker());
 $('#pickForm').addEventListener('submit', submitPick);
 $('#message').addEventListener('input', syncPlainOptions);
 $('#email').addEventListener('input', syncPlainOptions);

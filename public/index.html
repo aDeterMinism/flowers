@@ -21,14 +21,17 @@
       <div class="dock-divider"></div>
     </nav>
     <section class="stage" aria-live="polite">
-      <div class="stage-art" id="stageArt"></div>
+      <div class="stage-art" id="stageArt" aria-hidden="true">
+        <img class="stage-image stage-preview" id="stagePreview" src="/assets/flowers/sunflower-preview.webp" alt="" decoding="async">
+        <img class="stage-image stage-main" id="stageImage" src="/assets/flowers/sunflower.webp" alt="" decoding="async" fetchpriority="high">
+      </div>
       <div class="ambient"><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="stage-label"><span id="stageIndex">01</span><b></b><span id="stageSpecies">康乃馨</span></div>
+      <div class="stage-label"><span id="stageIndex">01</span><b></b><span id="stageSpecies">向日葵</span></div>
     </section>
     <aside class="story-panel">
-      <p class="eyebrow" id="flowerNote">花期 · 初秋</p>
-      <h1 id="flowerTitle">一朵认真盛开的温柔</h1>
-      <p class="flower-line" id="flowerLine">你不必总是坚强，柔软本身就有力量。</p>
+      <p class="eyebrow" id="flowerNote">花期 · 盛夏</p>
+      <h1 id="flowerTitle">朝向你的晴天</h1>
+      <p class="flower-line" id="flowerLine">你出现的时候，连沉默都有了明亮的方向。</p>
       <div class="availability"><span></span><span id="availabilityText">还在花园里</span></div>
       <button class="pick-button" id="pickButton"><span>摘下这朵花</span><i>↗</i></button>
       <p class="invitation" id="invitation">我有一个花园，你可以看看。喜欢的话，就挑一朵走。</p>

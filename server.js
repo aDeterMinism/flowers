@@ -12,8 +12,11 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const DB_BACKUP_FILE = path.join(DATA_DIR, 'db.json.bak');
-// No binary uploads are accepted. JSON is capped globally; visitor ciphertext has a tighter cap below.
+const UPLOAD_DIR = path.join(PUBLIC_DIR, 'assets', 'uploads');
+const DB_SCHEMA_VERSION = 2;
+// JSON is capped globally; authenticated flower-image uploads use a separate binary cap.
 const MAX_BODY = 128 * 1024;
+const MAX_IMAGE_UPLOAD = 2 * 1024 * 1024;
 const MAX_ENVELOPE_CIPHERTEXT = 32 * 1024;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const sessions = new Map();
@@ -31,20 +34,45 @@ const initialConfig = {
   },
   smtp: { host: '', port: 465, secure: true, username: '', password: '', from: '' },
   flowers: [
-    { id: 'carnation-1', species: '康乃馨', icon: '✿', color: '#e9928f', title: '一朵认真盛开的温柔', line: '你不必总是坚强，柔软本身就有力量。', note: '花期 · 初秋', mediaFocus: '56% 45%' },
-    { id: 'rose-1', species: '玫瑰', icon: '❀', color: '#d47283', title: '第一朵玫瑰，写给心动', line: '爱意不是盛大的宣言，是每次想到你时，世界轻轻亮了一下。', note: '花期 · 七夕', mediaFocus: '55% 62%' },
-    { id: 'rose-2', species: '玫瑰', icon: '❀', color: '#b65a70', title: '第二朵玫瑰，写给勇敢', line: '愿你敢于靠近喜欢，也从容接受每一种答案。', note: '花期 · 七夕', mediaFocus: '65% 76%' },
-    { id: 'daffodil-1', species: '水仙', icon: '✥', color: '#f2dfb2', title: '水面上的第一束光', line: '愿你在自己的倒影里，看见值得被珍惜的人。', note: '花期 · 月夜', mediaFocus: '49% 27%' },
-    { id: 'daffodil-2', species: '水仙', icon: '✥', color: '#ead49a', title: '一封没有署名的清晨', line: '有些相遇不喧哗，却会让漫长的日子有了香气。', note: '花期 · 月夜', mediaFocus: '61% 36%' },
-    { id: 'daffodil-3', species: '水仙', icon: '✥', color: '#f6e9c7', title: '留给归途的小灯', line: '无论走了多远，都有人愿意为你留一盏灯。', note: '花期 · 月夜', mediaFocus: '45% 65%' },
-    { id: 'sunflower-1', species: '向日葵', icon: '✺', color: '#e2a93d', title: '朝向你的晴天', line: '你出现的时候，连沉默都有了明亮的方向。', note: '花期 · 盛夏', mediaFocus: '72% 16%' },
-    { id: 'sunflower-2', species: '向日葵', icon: '✺', color: '#d79827', title: '慢一点也会抵达', line: '不是每一天都要发光，向着光走就很好。', note: '花期 · 盛夏', mediaFocus: '83% 39%' },
-    { id: 'sunflower-3', species: '向日葵', icon: '✺', color: '#e7b84b', title: '把夏天装进口袋', line: '请收下这一小块晴朗，等阴天时再打开。', note: '花期 · 盛夏', mediaFocus: '73% 66%' },
-    { id: 'sunflower-4', species: '向日葵', icon: '✺', color: '#c98b21', title: '不落幕的金色时刻', line: '愿所有热烈都有回声，所有等待都不被辜负。', note: '花期 · 盛夏', mediaFocus: '78% 72%' }
+    { id: 'sunflower-1', species: '向日葵', icon: '✺', color: '#e2a93d', title: '朝向你的晴天', line: '你出现的时候，连沉默都有了明亮的方向。', note: '花期 · 盛夏', mediaFocus: '72% 45%', image: '/assets/flowers/sunflower.webp', preview: '/assets/flowers/sunflower-preview.webp' },
+    { id: 'sunflower-2', species: '向日葵', icon: '✺', color: '#d79827', title: '慢一点也会抵达', line: '不是每一天都要发光，向着光走就很好。', note: '花期 · 盛夏', mediaFocus: '66% 52%', image: '/assets/flowers/sunflower.webp', preview: '/assets/flowers/sunflower-preview.webp' },
+    { id: 'sunflower-3', species: '向日葵', icon: '✺', color: '#e7b84b', title: '把夏天装进口袋', line: '请收下这一小块晴朗，等阴天时再打开。', note: '花期 · 盛夏', mediaFocus: '74% 63%', image: '/assets/flowers/sunflower.webp', preview: '/assets/flowers/sunflower-preview.webp' },
+    { id: 'sunflower-4', species: '向日葵', icon: '✺', color: '#c98b21', title: '不落幕的金色时刻', line: '愿所有热烈都有回声，所有等待都不被辜负。', note: '花期 · 盛夏', mediaFocus: '83% 48%', image: '/assets/flowers/sunflower.webp', preview: '/assets/flowers/sunflower-preview.webp' },
+    { id: 'carnation-1', species: '康乃馨', icon: '✿', color: '#e9928f', title: '一朵认真盛开的温柔', line: '你不必总是坚强，柔软本身就有力量。', note: '花期 · 初秋', mediaFocus: '70% 48%', image: '/assets/flowers/carnation.webp', preview: '/assets/flowers/carnation-preview.webp' },
+    { id: 'rose-1', species: '玫瑰', icon: '❀', color: '#d47283', title: '第一朵玫瑰，写给心动', line: '每次胡思乱想，世界会轻轻亮了一下。', note: '花期 · 七夕', mediaFocus: '70% 45%', image: '/assets/flowers/rose.webp', preview: '/assets/flowers/rose-preview.webp' },
+    { id: 'rose-2', species: '玫瑰', icon: '❀', color: '#b65a70', title: '第二朵玫瑰，写给勇敢', line: '敢于靠近，也从容接受每一种答案。', note: '花期 · 七夕', mediaFocus: '65% 60%', image: '/assets/flowers/rose.webp', preview: '/assets/flowers/rose-preview.webp' },
+    { id: 'daffodil-1', species: '水仙', icon: '✥', color: '#f2dfb2', title: '水面上的第一束光', line: '愿你在自己的倒影里，看见值得被珍惜的人。', note: '花期 · 月夜', mediaFocus: '68% 37%', image: '/assets/flowers/daffodil.webp', preview: '/assets/flowers/daffodil-preview.webp' },
+    { id: 'daffodil-2', species: '水仙', icon: '✥', color: '#ead49a', title: '一封没有署名的清晨', line: '有些相遇不喧哗，却会让漫长的日子有了香气。', note: '花期 · 月夜', mediaFocus: '76% 48%', image: '/assets/flowers/daffodil.webp', preview: '/assets/flowers/daffodil-preview.webp' },
+    { id: 'daffodil-3', species: '水仙', icon: '✥', color: '#f6e9c7', title: '留给归途的小灯', line: '无论走了多远，都为自己留一盏灯。', note: '花期 · 月夜', mediaFocus: '69% 64%', image: '/assets/flowers/daffodil.webp', preview: '/assets/flowers/daffodil-preview.webp' }
   ]
 };
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+
+function migrateDb(db) {
+  if (Number(db.schemaVersion || 0) >= DB_SCHEMA_VERSION) return false;
+  const defaults = new Map(initialConfig.flowers.map(flower => [flower.id, flower]));
+  const current = new Map(db.config.flowers.map(flower => [flower.id, flower]));
+  const known = initialConfig.flowers.map(defaultFlower => {
+    const flower = current.get(defaultFlower.id);
+    if (!flower) return clone(defaultFlower);
+    return {
+      ...flower,
+      title: defaultFlower.title,
+      line: defaultFlower.line,
+      image: flower.image || defaultFlower.image,
+      preview: flower.preview || defaultFlower.preview
+    };
+  });
+  const extra = db.config.flowers.filter(flower => !defaults.has(flower.id)).map(flower => ({
+    ...flower,
+    image: flower.image || '/assets/flowers/carnation.webp',
+    preview: flower.preview || '/assets/flowers/carnation-preview.webp'
+  }));
+  db.config.flowers = [...known, ...extra];
+  db.schemaVersion = DB_SCHEMA_VERSION;
+  return true;
+}
 
 function readDbFile() {
   let db;
@@ -63,16 +91,18 @@ function readDbFile() {
 function ensureDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DB_FILE)) {
-    const db = { config: clone(initialConfig), claims: [] };
+    const db = { schemaVersion: DB_SCHEMA_VERSION, config: clone(initialConfig), claims: [] };
     writeDb(db);
     return db;
   }
   const db = readDbFile();
+  let changed = migrateDb(db);
   // Remove the legacy attachment setting from databases created by earlier versions.
   if (Object.hasOwn(db.config, 'attachmentLimitKb')) {
     delete db.config.attachmentLimitKb;
-    writeDb(db);
+    changed = true;
   }
+  if (changed) writeDb(db);
   return db;
 }
 
@@ -146,7 +176,25 @@ function readBody(req) {
   });
 }
 
+function readBinaryBody(req, max = MAX_IMAGE_UPLOAD) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > max) { reject(Object.assign(new Error('图片数据过大'), { status: 413 })); req.destroy(); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 function cleanText(value, max = 4000) { return String(value || '').trim().slice(0, max); }
+
+function cleanAssetPath(value, fallback = '') {
+  const asset = cleanText(value, 300);
+  return /^\/assets\/(?:flowers|uploads)\/[a-z0-9._-]+$/i.test(asset) ? asset : fallback;
+}
 
 function boundedText(value, field, max, { required = false, pattern } = {}) {
   if (value !== undefined && typeof value !== 'string') throw Object.assign(new Error(`${field}格式无效`), { status: 400 });
@@ -197,7 +245,9 @@ function validateConfig(input, current) {
       icon: cleanText(f.icon, 4) || '✿',
       color: /^#[0-9a-f]{6}$/i.test(f.color) ? f.color : '#e9928f',
       title: cleanText(f.title, 120), line: cleanText(f.line, 320), note: cleanText(f.note, 80),
-      mediaFocus: /^\d{1,3}% \d{1,3}%$/.test(f.mediaFocus || '') ? f.mediaFocus : '60% 50%'
+      mediaFocus: /^\d{1,3}% \d{1,3}%$/.test(f.mediaFocus || '') ? f.mediaFocus : '60% 50%',
+      image: cleanAssetPath(f.image, '/assets/flowers/carnation.webp'),
+      preview: cleanAssetPath(f.preview, '/assets/flowers/carnation-preview.webp')
     }));
   }
   return out;
@@ -220,6 +270,16 @@ function smtpCommand(socket, command, expected) {
     socket.on('data', onData);
     if (command !== null) socket.write(`${command}\r\n`);
   });
+}
+
+function isWebP(buffer) {
+  return buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+}
+
+function removeUploadedAsset(assetPath) {
+  if (!/^\/assets\/uploads\/[a-z0-9._-]+$/i.test(assetPath || '')) return;
+  const file = path.join(PUBLIC_DIR, assetPath.slice(1));
+  if (file.startsWith(`${UPLOAD_DIR}${path.sep}`)) fs.rmSync(file, { force: true });
 }
 
 async function sendMail(config, to, flower) {
@@ -255,8 +315,9 @@ function serveStatic(req, res, pathname) {
   if (!file.startsWith(`${PUBLIC_DIR}${path.sep}`) && file !== PUBLIC_DIR) return false;
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return false;
   const ext = path.extname(file);
-  const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
-  res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+  const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+  const cacheControl = ext === '.html' ? 'no-store' : requested.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600';
+  res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': cacheControl, 'Content-Length': fs.statSync(file).size, 'X-Content-Type-Options': 'nosniff' });
   fs.createReadStream(file).pipe(res);
   return true;
 }
@@ -311,12 +372,41 @@ async function handleApi(req, res, pathname) {
 
   if (pathname.startsWith('/api/admin/') && !isAdmin(req)) return json(res, 401, { error: '请先登录' });
 
+  if (req.method === 'POST' && /^\/api\/admin\/flowers\/[^/]+\/image$/.test(pathname)) {
+    const flowerId = decodeURIComponent(pathname.split('/')[4]);
+    const previewLength = Number(req.headers['x-flower-preview-bytes']);
+    if (!Number.isInteger(previewLength) || previewLength < 100 || previewLength > 128 * 1024) return json(res, 400, { error: '小预览图长度无效' });
+    const payload = await readBinaryBody(req);
+    const preview = payload.subarray(0, previewLength);
+    const full = payload.subarray(previewLength);
+    if (!isWebP(preview) || !isWebP(full)) return json(res, 415, { error: '图片必须由管理页转换为 WebP' });
+    const db = readDb(); const flower = db.config.flowers.find(item => item.id === flowerId);
+    if (!flower) return json(res, 404, { error: '这朵花不存在' });
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    const key = crypto.randomUUID();
+    const previewName = `${key}-preview.webp`; const fullName = `${key}.webp`;
+    const previewFile = path.join(UPLOAD_DIR, previewName); const fullFile = path.join(UPLOAD_DIR, fullName);
+    fs.writeFileSync(previewFile, preview, { mode: 0o644 });
+    fs.writeFileSync(fullFile, full, { mode: 0o644 });
+    const previousImage = flower.image; const previousPreview = flower.preview;
+    flower.image = `/assets/uploads/${fullName}`;
+    flower.preview = `/assets/uploads/${previewName}`;
+    try { writeDb(db); }
+    catch (error) { fs.rmSync(previewFile, { force: true }); fs.rmSync(fullFile, { force: true }); throw error; }
+    removeUploadedAsset(previousImage); removeUploadedAsset(previousPreview);
+    return json(res, 201, { ok: true, image: flower.image, preview: flower.preview });
+  }
+
   if (req.method === 'GET' && pathname === '/api/admin/state') {
     const db = readDb(); const safe = clone(db); if (safe.config.smtp.password) safe.config.smtp.password = '••••••••';
     return json(res, 200, safe);
   }
   if (req.method === 'PUT' && pathname === '/api/admin/config') {
-    const body = await readBody(req); const db = readDb(); db.config = validateConfig(body, db.config); writeDb(db);
+    const body = await readBody(req); const db = readDb();
+    const previousAssets = db.config.flowers.flatMap(flower => [flower.image, flower.preview]);
+    db.config = validateConfig(body, db.config); writeDb(db);
+    const usedAssets = new Set(db.config.flowers.flatMap(flower => [flower.image, flower.preview]));
+    previousAssets.filter(asset => !usedAssets.has(asset)).forEach(removeUploadedAsset);
     return json(res, 200, { ok: true });
   }
   if (req.method === 'GET' && pathname === '/api/admin/export') {

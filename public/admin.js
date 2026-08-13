@@ -3,7 +3,8 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 
 async function api(url, options = {}) {
-  const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const { headers = {}, ...request } = options;
+  const response = await fetch(url, { ...request, headers: { 'Content-Type': 'application/json', ...headers } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(data.error || '请求失败'), { status: response.status });
   return data;
@@ -14,8 +15,11 @@ function bufferToPem(buffer, label) { const b64 = btoa(String.fromCharCode(...ne
 function download(name, data, type = 'application/json') { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
 
-async function loadState() {
-  try { state.db = await api('/api/admin/state'); $('#loginView').hidden = true; $('#adminApp').hidden = false; render(); }
+async function loadState({ afterLogin = false } = {}) {
+  try {
+    state.db = await api('/api/admin/state'); $('#loginView').hidden = !afterLogin; $('#adminApp').hidden = false; render();
+    if (afterLogin) requestAnimationFrame(() => window.scrollTo({ top: Math.round(innerHeight * .48), behavior: 'smooth' }));
+  }
   catch (error) { if (error.status !== 401) $('#loginError').textContent = error.message; }
 }
 
@@ -32,11 +36,45 @@ function renderFlowers() {
   const root = $('#flowerEditor'); root.innerHTML = '';
   state.db.config.flowers.forEach((flower, index) => {
     const row = document.createElement('div'); row.className = 'flower-row';
-    row.innerHTML = `<div class="mini-stack"><input type="color" data-k="color" value="${escapeHtml(flower.color)}"><input data-k="icon" value="${escapeHtml(flower.icon)}" title="符号"></div><input data-k="species" value="${escapeHtml(flower.species)}" placeholder="品种"><input data-k="title" value="${escapeHtml(flower.title)}" placeholder="标题"><textarea data-k="line" placeholder="一句话">${escapeHtml(flower.line)}</textarea><button title="删除">×</button>`;
+    row.innerHTML = `<div class="flower-media"><img src="${escapeHtml(flower.preview || flower.image)}" alt=""><label class="image-upload">更换图片<input type="file" accept="image/jpeg,image/png,image/webp"></label><small>自动生成 WebP 与小预览</small></div><div class="mini-stack"><input type="color" data-k="color" value="${escapeHtml(flower.color)}"><input data-k="icon" value="${escapeHtml(flower.icon)}" title="符号"></div><input data-k="species" value="${escapeHtml(flower.species)}" placeholder="品种"><input data-k="title" value="${escapeHtml(flower.title)}" placeholder="标题"><textarea data-k="line" placeholder="一句话">${escapeHtml(flower.line)}</textarea><button class="delete-flower" title="删除">×</button>`;
     row.querySelectorAll('[data-k]').forEach(input => input.addEventListener('input', () => { flower[input.dataset.k] = input.value; }));
-    row.querySelector('button').addEventListener('click', () => { if (confirm(`删除「${flower.title || flower.species}」？已摘取记录不会一并删除。`)) { state.db.config.flowers.splice(index, 1); renderFlowers(); } });
+    row.querySelector('input[type=file]').addEventListener('change', event => uploadFlowerImage(flower, event.target.files[0], row));
+    row.querySelector('.delete-flower').addEventListener('click', () => { if (confirm(`删除「${flower.title || flower.species}」？已摘取记录不会一并删除。`)) { state.db.config.flowers.splice(index, 1); renderFlowers(); } });
     root.appendChild(row);
   });
+}
+
+function canvasBlob(canvas, quality) {
+  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('无法转换图片')), 'image/webp', quality));
+}
+
+async function resizeImage(file, maxWidth, maxHeight, quality) {
+  if (!file || file.size > 12 * 1024 * 1024) throw new Error('请选择小于 12 MB 的 JPG、PNG 或 WebP 图片');
+  const bitmap = await createImageBitmap(file);
+  const ratio = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height);
+  const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(bitmap.width * ratio)); canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
+  return canvasBlob(canvas, quality);
+}
+
+async function makeSquarePreview(file) {
+  const bitmap = await createImageBitmap(file); const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas'); canvas.width = 96; canvas.height = 96;
+  canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 96, 96); bitmap.close();
+  return canvasBlob(canvas, .58);
+}
+
+async function uploadFlowerImage(flower, file, row) {
+  if (!file) return;
+  const label = row.querySelector('.image-upload'); label.classList.add('busy'); label.firstChild.textContent = '正在优化…';
+  try {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 12 * 1024 * 1024) throw new Error('请选择小于 12 MB 的 JPG、PNG 或 WebP 图片');
+    const [preview, full] = await Promise.all([makeSquarePreview(file), resizeImage(file, 1600, 1600, .8)]);
+    if (preview.size + full.size > 2 * 1024 * 1024) throw new Error('优化后图片仍超过 2 MB，请换一张更小的图');
+    const response = await api(`/api/admin/flowers/${encodeURIComponent(flower.id)}/image`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Flower-Preview-Bytes': String(preview.size) }, body: new Blob([preview, full]) });
+    flower.image = response.image; flower.preview = response.preview; row.querySelector('img').src = response.preview; $('#saveState').textContent = '图片已上传并保存';
+  } catch (error) { $('#saveState').textContent = error.message; }
+  finally { label.classList.remove('busy'); label.firstChild.textContent = '更换图片'; setTimeout(() => $('#saveState').textContent = '', 3500); }
 }
 
 function renderRecords() {
@@ -96,12 +134,12 @@ async function inspectRecord(claim) {
   $('#recordDialog').showModal();
 }
 
-$('#loginForm').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/admin/login', { method:'POST', body:JSON.stringify({ password:$('#password').value }) }); await loadState(); } catch(error) { $('#loginError').textContent=error.message; } });
+$('#loginForm').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/admin/login', { method:'POST', body:JSON.stringify({ password:$('#password').value }) }); await loadState({ afterLogin: true }); } catch(error) { $('#loginError').textContent=error.message; } });
 $$('.sidebar nav button').forEach(button => button.addEventListener('click', () => { $$('.sidebar nav button').forEach(b=>b.classList.remove('active')); $$('.tab').forEach(t=>t.classList.remove('active')); button.classList.add('active'); $(`#${button.dataset.tab}Tab`).classList.add('active'); $('#pageTitle').textContent = button.textContent === '概览' ? '花园概览' : button.textContent; }));
 $('#saveConfig').addEventListener('click', saveConfig); $('#generateKeys').addEventListener('click', generateKeys);
 $('#publicKeyFile').addEventListener('change', async e => { if(e.target.files[0]) $('#publicKeyInput').value = await e.target.files[0].text(); });
 $('#privateKeyFile').addEventListener('change', e => { if(e.target.files[0]) loadPrivateKey(e.target.files[0]); });
-$('#addFlower').addEventListener('click', () => { const n=state.db.config.flowers.length+1; state.db.config.flowers.push({id:`flower-${crypto.randomUUID()}`,species:'新花',icon:'✿',color:'#d58f86',title:`花园里的第 ${n} 朵花`,line:'写下一句只属于它的话。',note:'花期 · 未知',mediaFocus:'60% 50%'}); renderFlowers(); });
+$('#addFlower').addEventListener('click', () => { const n=state.db.config.flowers.length+1; state.db.config.flowers.push({id:`flower-${crypto.randomUUID()}`,species:'新花',icon:'✿',color:'#d58f86',title:`花园里的第 ${n} 朵花`,line:'写下一句只属于它的话。',note:'花期 · 未知',mediaFocus:'60% 50%',image:'/assets/flowers/carnation.webp',preview:'/assets/flowers/carnation-preview.webp'}); renderFlowers(); });
 $('#logout').addEventListener('click', async()=>{await api('/api/admin/logout',{method:'POST'});location.reload()});
 $('.dialog-close').addEventListener('click',()=>$('#recordDialog').close());
 loadState();
