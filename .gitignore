@@ -1,0 +1,5 @@
+data/db.json
+data/db.json.tmp
+data/db.json.bak
+.env
+node_modules/

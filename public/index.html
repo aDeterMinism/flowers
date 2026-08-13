@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071b21">
+  <title>月光花园</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="grain"></div>
+  <header class="brand">
+    <span class="brand-mark">✦</span>
+    <div><strong id="gardenName">月光花园</strong><small>THE MOONLIT GARDEN</small></div>
+  </header>
+  <main class="garden-shell">
+    <nav class="flower-dock" id="flowerDock" aria-label="花朵列表">
+      <a class="dock-item compass" href="/admin" aria-label="进入花园管理">
+        <span class="compass-face"><i></i></span><em>管理</em>
+      </a>
+      <div class="dock-divider"></div>
+    </nav>
+    <section class="stage" aria-live="polite">
+      <div class="stage-art" id="stageArt"></div>
+      <div class="ambient"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="stage-label"><span id="stageIndex">01</span><b></b><span id="stageSpecies">康乃馨</span></div>
+    </section>
+    <aside class="story-panel">
+      <p class="eyebrow" id="flowerNote">花期 · 初秋</p>
+      <h1 id="flowerTitle">一朵认真盛开的温柔</h1>
+      <p class="flower-line" id="flowerLine">你不必总是坚强，柔软本身就有力量。</p>
+      <div class="availability"><span></span><span id="availabilityText">还在花园里</span></div>
+      <button class="pick-button" id="pickButton"><span>摘下这朵花</span><i>↗</i></button>
+      <p class="invitation" id="invitation">我有一个花园，你可以看看。喜欢的话，就挑一朵走。</p>
+      <div class="picked-note" id="pickedNote" hidden><span>留下的话</span><p></p></div>
+    </aside>
+  </main>
+
+  <dialog id="pickDialog" class="modal">
+    <form method="dialog" class="modal-card" id="pickForm">
+      <button class="modal-close" type="button" aria-label="关闭">×</button>
+      <p class="eyebrow">带走 <span id="modalFlower"></span></p>
+      <h2>留下一点关于你的线索</h2>
+      <p class="privacy-intro">在你同意后，我们将自动读取基础的信息。额外上传的联系方式等全部可以选择留空，但是如果非空客户端会阻止你提交大部分的不正确的信息。全部内容将用部署者的公钥加密后，以密文的形式离开你的设备，并存储在服务器上。服务器上没有解密用的密钥（或者说理想状态下不应该有，这取决于部署者的习惯），即使服务器被入侵也通常不会造成您的信息泄漏。当然，再次建议确保部署者是可信的。</p>
+      <label class="consent"><input type="checkbox" id="consent" required><span><b>我同意采集基础浏览器指纹</b><small>浏览器、系统、屏幕、语言、时区和简单图形特征；不采集定位、相机或麦克风。</small></span></label>
+      <div class="form-grid">
+        <label class="wide">留言（选填）<textarea id="message" maxlength="2000" placeholder="想说的话，或者只是一个句号"></textarea></label>
+        <label>邮箱（选填）<input id="email" type="email" maxlength="254" placeholder="name@example.com"></label>
+        <label>QQ（选填）<input id="qq" maxlength="12" inputmode="numeric" pattern="[1-9][0-9]{4,11}" placeholder="5–12 位数字"></label>
+        <label>微信（选填）<input id="wechat" maxlength="64"></label>
+        <label>电话（选填）<input id="phone" maxlength="30" inputmode="tel" pattern="[0-9+() -]{7,30}"></label>
+        <label>抖音（选填）<input id="douyin" maxlength="80"></label>
+        <label>小红书（选填）<input id="redbook" maxlength="80"></label>
+        <label>飞书（选填）<input id="feishu" maxlength="100"></label>
+      </div>
+      <div class="plain-options">
+        <label id="shareMessageWrap" class="is-disabled"><input type="checkbox" id="shareMessage" disabled><span>允许留言明文以展示在花园里</span></label>
+        <label id="shareEmailWrap" class="is-disabled"><input type="checkbox" id="shareEmail" disabled><span>允许邮箱明文上传，以便立即收到回复</span></label>
+      </div>
+      <div class="crypto-note"><span>⌁</span><p><b>端到端封装</b><small>AES-256-GCM + RSA-OAEP · 私钥一般不在服务器</small></p></div>
+      <button class="submit-button" id="submitPick" value="default">确认，带它走 <span>→</span></button>
+      <p class="form-status" id="formStatus"></p>
+    </form>
+  </dialog>
+  <div class="toast" id="toast"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>
