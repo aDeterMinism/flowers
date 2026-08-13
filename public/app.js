@@ -1,10 +1,20 @@
-const state = { config: null, active: 0, imageToken: 0, hoverTimer: 0, previewCache: new Map() };
+const state = { config: null, active: 0, imageToken: 0, hoverTimer: 0, scrollFrame: 0, scrollTimer: 0, previewCache: new Map() };
 const $ = s => document.querySelector(s);
 const dock = $('#flowerDock');
 const dialog = $('#pickDialog');
-const desktopPointer = matchMedia('(any-hover: hover) and (any-pointer: fine)');
+const mouseCapable = matchMedia('(hover: hover) and (pointer: fine)');
+const mobileDock = matchMedia('(orientation: portrait), (max-width: 820px)');
 const CONTACT_LIMITS = Object.freeze({ message: 2000, email: 254, qq: 12, wechat: 64, phone: 30, douyin: 80, redbook: 80, feishu: 100 });
 const MAX_CLEAR_PAYLOAD_BYTES = 16 * 1024;
+
+function setInputMode(pointerType) {
+  document.documentElement.dataset.inputMode = pointerType === 'mouse' ? 'mouse' : 'touch';
+}
+
+setInputMode(mouseCapable.matches ? 'mouse' : 'touch');
+document.addEventListener('pointerdown', event => setInputMode(event.pointerType), true);
+
+function usesMouse() { return document.documentElement.dataset.inputMode === 'mouse'; }
 
 async function api(url, options = {}) {
   const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
@@ -64,31 +74,38 @@ async function encryptEnvelope(payload, publicKeyPem) {
 
 function buildDock() {
   dock.querySelectorAll('[data-flower]').forEach(el => el.remove());
-  state.config.flowers.forEach((flower, index) => {
+  const copies = mobileDock.matches ? 3 : 1;
+  for (let copy = 0; copy < copies; copy += 1) state.config.flowers.forEach((flower, index) => {
     const button = document.createElement('button');
     button.className = `dock-item${flower.picked ? ' picked' : ''}`;
-    button.dataset.flower = flower.id; button.style.setProperty('--flower-color', flower.color);
+    button.dataset.flower = flower.id; button.dataset.index = index; button.dataset.cycle = copy;
+    button.style.setProperty('--flower-color', flower.color);
     const symbol = document.createElement('span'); symbol.className = 'flower-symbol'; symbol.textContent = flower.icon;
     const label = document.createElement('em'); label.textContent = flower.species;
     button.append(symbol, label);
     button.setAttribute('aria-label', `${flower.species}：${flower.title}${flower.picked ? '，已被摘走' : ''}`);
     button.addEventListener('pointerenter', event => {
-      if (event.pointerType !== 'touch' && desktopPointer.matches) previewFlower(index, { deferFull: true });
+      if (!mobileDock.matches && event.pointerType === 'mouse' && usesMouse()) previewFlower(index, { deferFull: true });
     });
-    button.addEventListener('focus', () => { if (desktopPointer.matches) previewFlower(index, { deferFull: true }); });
+    button.addEventListener('focus', () => {
+      if (!mobileDock.matches && usesMouse()) previewFlower(index, { deferFull: true });
+    });
     button.addEventListener('click', event => {
-      if (desktopPointer.matches && event.pointerType !== 'touch') openPicker(index);
-      else previewFlower(index);
+      if (event.detail === 0 || usesMouse()) openPicker(index);
+      else centerDockItem(button, 'smooth');
     });
     dock.appendChild(button);
   });
   setupDockMagnification();
+  setupCircularDock();
+  if (mobileDock.matches) requestAnimationFrame(() => centerDockIndex(state.active, 'auto'));
 }
 
 function setupDockMagnification() {
-  if (dock.dataset.magnificationReady || !desktopPointer.matches) return;
+  if (dock.dataset.magnificationReady) return;
   dock.dataset.magnificationReady = 'true';
   dock.addEventListener('pointermove', event => {
+    if (!usesMouse() || mobileDock.matches || event.pointerType !== 'mouse') return;
     dock.querySelectorAll('.dock-item').forEach(item => {
       const rect = item.getBoundingClientRect();
       const center = matchMedia('(orientation: portrait)').matches ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
@@ -100,6 +117,45 @@ function setupDockMagnification() {
   dock.addEventListener('pointerleave', () => dock.querySelectorAll('.dock-item').forEach(item => item.style.setProperty('--scale', 1)));
 }
 
+function centerDockItem(item, behavior = 'smooth') {
+  if (!mobileDock.matches || !item) return;
+  dock.scrollTo({ left: item.offsetLeft - (dock.clientWidth - item.offsetWidth) / 2, behavior });
+}
+
+function centerDockIndex(index, behavior = 'auto') {
+  centerDockItem(dock.querySelector(`[data-cycle="1"][data-index="${index}"]`), behavior);
+}
+
+function closestDockItem() {
+  const center = dock.getBoundingClientRect().left + dock.clientWidth / 2;
+  return [...dock.querySelectorAll('[data-flower]')].reduce((closest, item) => {
+    const rect = item.getBoundingClientRect(); const distance = Math.abs(rect.left + rect.width / 2 - center);
+    return !closest || distance < closest.distance ? { item, distance } : closest;
+  }, null)?.item;
+}
+
+function settleCircularDock() {
+  if (!mobileDock.matches) return;
+  const item = closestDockItem(); if (!item) return;
+  const index = Number(item.dataset.index);
+  if (index !== state.active) previewFlower(index, { deferFull: true });
+  if (item.dataset.cycle !== '1') centerDockIndex(index, 'auto');
+}
+
+function setupCircularDock() {
+  if (dock.dataset.circularReady) return;
+  dock.dataset.circularReady = 'true';
+  dock.addEventListener('scroll', () => {
+    if (!mobileDock.matches) return;
+    cancelAnimationFrame(state.scrollFrame);
+    state.scrollFrame = requestAnimationFrame(() => {
+      const item = closestDockItem(); const index = Number(item?.dataset.index);
+      if (Number.isInteger(index) && index !== state.active) previewFlower(index, { deferFull: true });
+    });
+    clearTimeout(state.scrollTimer); state.scrollTimer = setTimeout(settleCircularDock, 120);
+  }, { passive: true });
+}
+
 function renderFlower(index) {
   state.active = index;
   const flower = state.config.flowers[index];
@@ -108,14 +164,13 @@ function renderFlower(index) {
   $('#stageIndex').textContent = String(index + 1).padStart(2, '0');
   $('#stageSpecies').textContent = flower.species; $('#flowerNote').textContent = flower.note;
   $('#flowerTitle').textContent = flower.title; $('#flowerLine').textContent = flower.line;
-  dock.querySelectorAll('[data-flower]').forEach((el, i) => el.classList.toggle('selected', i === index));
+  dock.querySelectorAll('[data-flower]').forEach(el => el.classList.toggle('selected', Number(el.dataset.index) === index));
   const availability = $('.availability'); availability.classList.toggle('is-picked', flower.picked);
   $('#availabilityText').textContent = flower.picked ? '已经被人轻轻带走了' : '还在花园里';
   const button = $('#pickButton'); button.disabled = flower.picked || !state.config.publicKey;
   button.querySelector('span').textContent = flower.picked ? '这朵花已有归处' : state.config.publicKey ? '摘下这朵花' : '花园尚未开放摘取';
   const story = state.config.pickedStories.find(s => s.flowerId === flower.id);
   $('#pickedNote').hidden = !story; if (story) $('#pickedNote p').textContent = story.message;
-  dock.querySelector(`[data-flower="${flower.id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
 }
 
 function showCachedPreview(flower) {
@@ -222,4 +277,5 @@ $('#pickForm').addEventListener('submit', submitPick);
 $('#message').addEventListener('input', syncPlainOptions);
 $('#email').addEventListener('input', syncPlainOptions);
 $('.modal-close').addEventListener('click', () => dialog.close());
+mobileDock.addEventListener('change', () => { if (state.config) buildDock(); });
 load();

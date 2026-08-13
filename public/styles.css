@@ -78,9 +78,10 @@ input:focus, textarea:focus { border-color: var(--gold); }.form-grid textarea { 
   .garden-shell { display: grid; grid-template-columns: 1fr; grid-template-rows: minmax(46dvh, 1fr) auto 94px; min-height: 100dvh; }
   .stage { grid-row: 1; min-height: 48dvh; border-right: 0; border-bottom: 1px solid var(--line); }.stage-art { background-position: var(--focus, 60% 50%); }.stage-label { bottom: 18px; }
   .story-panel { grid-row: 2; min-height: 390px; padding: 38px 25px 28px; }.story-panel h1 { font-size: clamp(31px, 9vw, 47px); }.flower-line { margin-top: 20px; }.availability { margin-top: 34px; }
-  .flower-dock { position: sticky; bottom: 0; grid-row: 3; align-self: end; justify-self: stretch; width: auto; max-height: none; height: 83px; margin: 0 10px max(8px, env(safe-area-inset-bottom)); padding: 9px 12px; flex-direction: row; overflow-x: auto; overflow-y: hidden; border-radius: 24px; scroll-snap-type: x mandatory; order: 3; }
+  .flower-dock { position: sticky; bottom: 0; grid-row: 3; align-self: end; justify-self: stretch; width: auto; max-height: none; height: 83px; margin: 0 10px max(8px, env(safe-area-inset-bottom)); padding: 9px 12px; flex-direction: row; overflow-x: auto; overflow-y: hidden; border-radius: 24px; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; touch-action: pan-x; order: 3; }
+  .flower-dock .compass, .flower-dock .dock-divider { display: none; }
   .dock-item { flex-basis: 57px; height: 57px; scroll-snap-align: center; }.dock-divider { width: 1px; height: 42px; flex-basis: 1px; margin: 7px 2px; }.dock-item.selected::after { right: auto; bottom: -8px; width: 13px; height: 3px; }
   .modal-card { padding: 38px 22px; }.form-grid { grid-template-columns: 1fr; }.form-grid .wide { grid-column: auto; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; } }
-@media (any-hover: hover) and (any-pointer: fine) { .pick-button { display: none; } }
+html[data-input-mode="mouse"] .pick-button { display: none; }
