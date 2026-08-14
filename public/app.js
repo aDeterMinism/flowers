@@ -1,7 +1,8 @@
-const state = { config: null, active: 0, imageToken: 0, hoverTimer: 0, scrollFrame: 0, scrollTimer: 0, previewCache: new Map() };
+const state = { config: null, active: 0, imageToken: 0, hoverTimer: 0, scrollFrame: 0, scrollTimer: 0, discoveryTimer: 0, previewCache: new Map() };
 const $ = s => document.querySelector(s);
 const dock = $('#flowerDock');
 const dialog = $('#pickDialog');
+const gardenShell = $('#gardenShell');
 const mouseCapable = matchMedia('(hover: hover) and (pointer: fine)');
 const mobileDock = matchMedia('(orientation: portrait), (max-width: 820px)');
 const CONTACT_LIMITS = Object.freeze({ message: 2000, email: 254, qq: 12, wechat: 64, phone: 30, douyin: 80, redbook: 80, feishu: 100 });
@@ -15,6 +16,11 @@ setInputMode(mouseCapable.matches ? 'mouse' : 'touch');
 document.addEventListener('pointerdown', event => setInputMode(event.pointerType), true);
 
 function usesMouse() { return document.documentElement.dataset.inputMode === 'mouse'; }
+
+function stopDiscovery() {
+  clearTimeout(state.discoveryTimer);
+  gardenShell.classList.remove('is-discovering');
+}
 
 async function api(url, options = {}) {
   const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
@@ -85,12 +91,15 @@ function buildDock() {
     button.append(symbol, label);
     button.setAttribute('aria-label', `${flower.species}：${flower.title}${flower.picked ? '，已被摘走' : ''}`);
     button.addEventListener('pointerenter', event => {
+      stopDiscovery();
       if (!mobileDock.matches && event.pointerType === 'mouse' && usesMouse()) previewFlower(index, { deferFull: true });
     });
     button.addEventListener('focus', () => {
+      stopDiscovery();
       if (!mobileDock.matches && usesMouse()) previewFlower(index, { deferFull: true });
     });
     button.addEventListener('click', event => {
+      stopDiscovery();
       if (event.detail === 0 || usesMouse()) openPicker(index);
       else centerDockItem(button, 'smooth');
     });
@@ -159,18 +168,32 @@ function setupCircularDock() {
 function renderFlower(index) {
   state.active = index;
   const flower = state.config.flowers[index];
+  const total = state.config.flowers.length;
+  const remaining = state.config.flowers.filter(item => !item.picked).length;
+  const positionWidth = Math.max(2, String(total).length);
   document.documentElement.style.setProperty('--accent', flower.color);
   $('#stageArt').style.setProperty('--focus', flower.mediaFocus);
-  $('#stageIndex').textContent = String(index + 1).padStart(2, '0');
+  $('#stageIndex').textContent = String(index + 1).padStart(positionWidth, '0');
+  $('#stageTotal').textContent = String(total).padStart(positionWidth, '0');
+  $('#gardenCount').textContent = `共 ${total} 朵 · 剩余 ${remaining} 朵`;
   $('#stageSpecies').textContent = flower.species; $('#flowerNote').textContent = flower.note;
   $('#flowerTitle').textContent = flower.title; $('#flowerLine').textContent = flower.line;
   dock.querySelectorAll('[data-flower]').forEach(el => el.classList.toggle('selected', Number(el.dataset.index) === index));
   const availability = $('.availability'); availability.classList.toggle('is-picked', flower.picked);
-  $('#availabilityText').textContent = flower.picked ? '已经被人轻轻带走了' : '还在花园里';
+  $('#availabilityText').textContent = flower.picked ? '当前已有归处' : '当前可摘';
   const button = $('#pickButton'); button.disabled = flower.picked || !state.config.publicKey;
   button.querySelector('span').textContent = flower.picked ? '这朵花已有归处' : state.config.publicKey ? '摘下这朵花' : '花园尚未开放摘取';
   const story = state.config.pickedStories.find(s => s.flowerId === flower.id);
   $('#pickedNote').hidden = !story; if (story) $('#pickedNote p').textContent = story.message;
+}
+
+function showAdjacentFlower(direction) {
+  const total = state.config?.flowers.length || 0;
+  if (total < 2) return;
+  stopDiscovery();
+  const nextIndex = (state.active + direction + total) % total;
+  previewFlower(nextIndex);
+  if (mobileDock.matches) centerDockIndex(nextIndex, 'smooth');
 }
 
 function showCachedPreview(flower) {
@@ -239,9 +262,10 @@ function syncPlainOptions() {
 
 async function submitPick(event) {
   event.preventDefault();
-  if (!$('#consent').checked) { $('#formStatus').textContent = '请先确认指纹采集授权'; return; }
   if (!$('#pickForm').checkValidity()) { $('#pickForm').reportValidity(); return; }
-  const button = $('#submitPick'); button.disabled = true; $('#formStatus').textContent = '正在本地收集并加密…';
+  const includeDiagnostics = $('#consent').checked;
+  const button = $('#submitPick'); button.disabled = true;
+  $('#formStatus').textContent = includeDiagnostics ? '正在本地收集并加密…' : '正在本地加密…';
   const flower = state.config.flowers[state.active];
   try {
     const contact = Object.fromEntries(Object.entries(CONTACT_LIMITS).map(([field, limit]) => {
@@ -251,7 +275,7 @@ async function submitPick(event) {
     }));
     const payload = {
       flower: { id: flower.id, species: flower.species, title: flower.title },
-      fingerprint: await collectFingerprint(),
+      fingerprint: includeDiagnostics ? await collectFingerprint() : null,
       contact
     };
     const envelope = await encryptEnvelope(payload, state.config.publicKey);
@@ -268,14 +292,25 @@ async function load() {
   try {
     state.config = await api('/api/config');
     document.title = state.config.gardenName; $('#gardenName').textContent = state.config.gardenName; $('#invitation').textContent = state.config.invitation;
+    gardenShell.classList.toggle('single-flower', state.config.flowers.length < 2);
     buildDock(); previewFlower(Math.min(state.active, state.config.flowers.length - 1)); preloadSmallPreviews();
   } catch (error) { showToast(error.message); }
 }
 
 $('#pickButton').addEventListener('click', () => openPicker());
+$('#prevFlower').addEventListener('click', () => showAdjacentFlower(-1));
+$('#nextFlower').addEventListener('click', () => showAdjacentFlower(1));
 $('#pickForm').addEventListener('submit', submitPick);
 $('#message').addEventListener('input', syncPlainOptions);
 $('#email').addEventListener('input', syncPlainOptions);
 $('.modal-close').addEventListener('click', () => dialog.close());
+dock.addEventListener('pointerdown', stopDiscovery, { passive: true });
+dock.addEventListener('wheel', stopDiscovery, { passive: true });
 mobileDock.addEventListener('change', () => { if (state.config) buildDock(); });
+document.addEventListener('keydown', event => {
+  if (dialog.open || event.target.closest('input, textarea, button, a')) return;
+  if (event.key === 'ArrowLeft') { event.preventDefault(); showAdjacentFlower(-1); }
+  if (event.key === 'ArrowRight') { event.preventDefault(); showAdjacentFlower(1); }
+});
+state.discoveryTimer = setTimeout(stopDiscovery, 2600);
 load();

@@ -13,7 +13,7 @@
     <span class="brand-mark">✦</span>
     <div><strong id="gardenName">月光花园</strong><small>THE MOONLIT GARDEN</small></div>
   </header>
-  <main class="garden-shell">
+  <main class="garden-shell is-discovering" id="gardenShell">
     <nav class="flower-dock" id="flowerDock" aria-label="花朵列表">
       <a class="dock-item compass" href="/admin" aria-label="进入花园管理">
         <span class="compass-face"><i></i></span><em>管理</em>
@@ -26,17 +26,19 @@
         <img class="stage-image stage-main" id="stageImage" src="/assets/flowers/sunflower.webp" alt="" decoding="async" fetchpriority="high">
       </div>
       <div class="ambient"><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="stage-label"><span id="stageIndex">01</span><b></b><span id="stageSpecies">向日葵</span></div>
+      <div class="stage-label"><span class="stage-position"><span id="stageIndex">01</span><i>/</i><span id="stageTotal">01</span></span><b></b><span id="stageSpecies">向日葵</span></div>
     </section>
     <aside class="story-panel">
       <p class="eyebrow" id="flowerNote">花期 · 盛夏</p>
       <h1 id="flowerTitle">朝向你的晴天</h1>
       <p class="flower-line" id="flowerLine">你出现的时候，连沉默都有了明亮的方向。</p>
-      <div class="availability"><span></span><span id="availabilityText">还在花园里</span></div>
+      <div class="availability"><span class="availability-dot"></span><span id="availabilityText">当前可摘</span><small id="gardenCount">共 1 朵 · 剩余 1 朵</small></div>
       <button class="pick-button" id="pickButton"><span>摘下这朵花</span><i>↗</i></button>
       <p class="invitation" id="invitation">我有一个花园，你可以看看。喜欢的话，就挑一朵走。</p>
       <div class="picked-note" id="pickedNote" hidden><span>留下的话</span><p></p></div>
     </aside>
+    <button class="garden-arrow garden-arrow-prev" id="prevFlower" type="button" aria-label="上一朵花"><span aria-hidden="true">←</span></button>
+    <button class="garden-arrow garden-arrow-next" id="nextFlower" type="button" aria-label="下一朵花"><span aria-hidden="true">→</span></button>
   </main>
 
   <dialog id="pickDialog" class="modal">
@@ -44,8 +46,8 @@
       <button class="modal-close" type="button" aria-label="关闭">×</button>
       <p class="eyebrow">带走 <span id="modalFlower"></span></p>
       <h2>留下一点关于你的线索</h2>
-      <p class="privacy-intro">在你同意后，我们将自动读取基础的信息。额外上传的联系方式等全部可以选择留空，但是如果非空客户端会阻止你提交大部分的不正确的信息。全部内容将用部署者的公钥加密后，以密文的形式离开你的设备，并存储在服务器上。服务器上没有解密用的密钥（或者说理想状态下不应该有，这取决于部署者的习惯），即使服务器被入侵也通常不会造成您的信息泄漏。当然，再次建议确保部署者是可信的。</p>
-      <label class="consent"><input type="checkbox" id="consent" required><span><b>我同意采集基础浏览器指纹</b><small>浏览器、系统、屏幕、语言、时区和简单图形特征；不采集定位、相机或麦克风。</small></span></label>
+      <p class="privacy-intro">数据收集可以不勾选，联系方式均可留空！！！若您愿意，可以额外提供少量兼容性诊断信息，帮助部署者向开发者反馈特定浏览器、系统或屏幕下出现的排版、交互与请求兼容问题；不提供也不影响摘花。提交内容会先在你的设备上加密，再以密文形式上传和存储。服务器通常不保留解密所需的私钥，一般也无法解密您的信息，但仍建议只使用可信部署者提供的花园。</p>
+      <label class="consent"><input type="checkbox" id="consent"><span><b>提供兼容性诊断信息（选填）</b><small>包含浏览器、系统、屏幕、语言、时区和简单图形特征；不读取定位、相机或麦克风，不勾选也可正常摘花。</small></span></label>
       <div class="form-grid">
         <label class="wide">留言（选填）<textarea id="message" maxlength="2000" placeholder="想说的话，或者只是一个句号"></textarea></label>
         <label>邮箱（选填）<input id="email" type="email" maxlength="254" placeholder="name@example.com"></label>
